@@ -1,0 +1,136 @@
+{
+  "info": {
+    "name": "FermentCraft API - Test Collection",
+    "description": "Pruebas de observabilidad, lotes, paginacion y flujo de creacion de cajas maestro-detalle. Ejecutar con la API activa en localhost:8080.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "productBatchId", "value": "1" },
+    { "key": "createdProductBatchId", "value": "" },
+    { "key": "createdBoxId", "value": "" },
+    { "key": "createdOrderNumber", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Observabilidad",
+      "item": [
+        {
+          "name": "Health Check Global",
+          "request": { "method": "GET", "url": "{{baseUrl}}/q/health" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('HTTP 200', function () { pm.response.to.have.status(200); });", "pm.test('Health report contains status', function () { pm.expect(pm.response.json()).to.have.property('status'); });"] } }]
+        },
+        {
+          "name": "Health Check Liveness",
+          "request": { "method": "GET", "url": "{{baseUrl}}/q/health/live" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('HTTP 200', function () { pm.response.to.have.status(200); });", "pm.test('Application is alive', function () { pm.expect(pm.response.json().status).to.eql('UP'); });"] } }]
+        },
+        {
+          "name": "Health Check Readiness (DB)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/q/health/ready" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('HTTP 200 when database is ready', function () { pm.response.to.have.status(200); });", "pm.test('Database readiness is UP', function () { pm.expect(pm.response.json().status).to.eql('UP'); });"] } }]
+        }
+      ]
+    },
+    {
+      "name": "Product Batches (Lotes)",
+      "item": [
+        {
+          "name": "Listar lotes paginados",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/product-batches?page=0&size=5" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('HTTP 200', function () { pm.response.to.have.status(200); });", "pm.test('Response contains paginated data', function () { var body = pm.response.json(); pm.expect(body.content).to.be.an('array'); pm.expect(body).to.have.property('totalElements'); pm.expect(body).to.have.property('totalPages'); });"] } }]
+        },
+        {
+          "name": "Filtrar lotes por categoria",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/product-batches?category=KOMBUCHA&page=0&size=10" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('HTTP 200', function () { pm.response.to.have.status(200); });", "pm.test('All returned batches match category', function () { pm.response.json().content.forEach(function (batch) { pm.expect(batch.category).to.eql('KOMBUCHA'); }); });"] } }]
+        },
+        {
+          "name": "Obtener lote por ID (precargado: 1)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/product-batches/{{productBatchId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('HTTP 200', function () { pm.response.to.have.status(200); });", "pm.test('Returned batch has an ID', function () { pm.expect(pm.response.json().id).to.exist; });"] } }]
+        },
+        {
+          "name": "Crear nuevo lote",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"productName\": \"Kombucha Jengibre y Limon - Postman\",\n  \"category\": \"KOMBUCHA\",\n  \"availableQuantity\": 50,\n  \"unitPrice\": 65.00,\n  \"expirationDate\": \"2028-12-31\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/v1/product-batches"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('HTTP 201', function () { pm.response.to.have.status(201); });", "var body = pm.response.json();", "pm.collectionVariables.set('createdProductBatchId', body.id);", "pm.test('Created batch ID was saved for update/delete requests', function () { pm.expect(body.id).to.exist; });"] } }]
+        },
+        {
+          "name": "Crear lote invalido (Bean Validation: HTTP 400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"productName\": \"Lote invalido\",\n  \"category\": \"KOMBUCHA\",\n  \"availableQuantity\": 5,\n  \"unitPrice\": -1.00,\n  \"expirationDate\": \"2020-01-01\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/v1/product-batches"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('HTTP 400', function () { pm.response.to.have.status(400); });", "pm.test('Validation error has details', function () { var body = pm.response.json(); pm.expect(body.code).to.eql('VALIDATION_ERROR'); pm.expect(body.details).to.be.an('array').that.is.not.empty; });"] } }]
+        },
+        {
+          "name": "Actualizar lote creado",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"productName\": \"Kombucha Jengibre y Limon Actualizada\",\n  \"category\": \"KOMBUCHA\",\n  \"availableQuantity\": 75,\n  \"unitPrice\": 66.50,\n  \"expirationDate\": \"2028-12-31\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/v1/product-batches/{{createdProductBatchId}}"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('HTTP 200', function () { pm.response.to.have.status(200); });", "pm.test('Batch was updated', function () { pm.expect(pm.response.json().availableQuantity).to.eql(75); });"] } }]
+        },
+        {
+          "name": "Desactivar lote creado (soft delete)",
+          "request": { "method": "DELETE", "url": "{{baseUrl}}/api/v1/product-batches/{{createdProductBatchId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('HTTP 204', function () { pm.response.to.have.status(204); });"] } }]
+        }
+      ]
+    },
+    {
+      "name": "Subscription Boxes (Maestro-Detalle)",
+      "item": [
+        {
+          "name": "Crear orden de despacho (exitoso)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"customerEmail\": \"cliente.fermentos@example.com\",\n  \"shippingAddress\": \"Av. Insurgentes Sur 1602, Benito Juarez, CDMX\",\n  \"items\": [\n    { \"productBatchId\": 1, \"quantity\": 2 },\n    { \"productBatchId\": 2, \"quantity\": 1 }\n  ]\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/v1/subscription-boxes"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('HTTP 201', function () { pm.response.to.have.status(201); });", "var body = pm.response.json();", "pm.collectionVariables.set('createdBoxId', body.id);", "pm.collectionVariables.set('createdOrderNumber', body.orderNumber);", "pm.test('Order number and calculated amounts exist', function () { pm.expect(body.orderNumber).to.exist; pm.expect(body.subtotal).to.exist; pm.expect(body.totalAmount).to.exist; });"] } }]
+        },
+        {
+          "name": "Crear orden con stock insuficiente (esperado: HTTP 422)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"customerEmail\": \"stockout@example.com\",\n  \"shippingAddress\": \"Calle Sin Stock 123, CDMX\",\n  \"items\": [ { \"productBatchId\": 1, \"quantity\": 999999 } ]\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/api/v1/subscription-boxes"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('HTTP 422', function () { pm.response.to.have.status(422); });", "pm.test('Error indicates insufficient inventory', function () { pm.expect(pm.response.json().code).to.eql('INSUFFICIENT_STOCK'); });"] } }]
+        },
+        {
+          "name": "Obtener orden creada por ID",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/subscription-boxes/{{createdBoxId}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('HTTP 200', function () { pm.response.to.have.status(200); });"] } }]
+        },
+        {
+          "name": "Obtener orden creada por numero de orden",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/subscription-boxes/by-order/{{createdOrderNumber}}" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('HTTP 200', function () { pm.response.to.have.status(200); });"] } }]
+        },
+        {
+          "name": "Listar ordenes paginadas",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/subscription-boxes?page=0&size=10" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('HTTP 200', function () { pm.response.to.have.status(200); });", "pm.test('Response contains paginated data', function () { var body = pm.response.json(); pm.expect(body.content).to.be.an('array'); pm.expect(body).to.have.property('totalElements'); });"] } }]
+        },
+        {
+          "name": "Cambiar estado de orden creada a SHIPPED",
+          "request": { "method": "PATCH", "url": "{{baseUrl}}/api/v1/subscription-boxes/{{createdBoxId}}/status?newStatus=SHIPPED" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('HTTP 200', function () { pm.response.to.have.status(200); });", "pm.test('Order status is SHIPPED', function () { pm.expect(pm.response.json().status).to.eql('SHIPPED'); });"] } }]
+        }
+      ]
+    }
+  ]
+}
